@@ -23,12 +23,14 @@ teardown() {
 
 @test "pkg_detect finds a stubbed brew" {
 	stub_pkg_manager brew
+	bd_isolate_path
 	PKG_MANAGER=""
 	pkg_detect
 	[ "$PKG_MANAGER" = "brew" ]
 }
 
 @test "pkg_detect fails clearly when no manager is present" {
+	bd_isolate_path
 	PKG_MANAGER=""
 	run pkg_detect
 	[ "$status" -eq 1 ]
@@ -46,6 +48,7 @@ teardown() {
 
 @test "pkg_install dispatches to brew without sudo" {
 	stub_pkg_manager brew
+	bd_isolate_path
 	PKG_MANAGER=""
 	pkg_install node
 	run cat "$CALL_LOG"

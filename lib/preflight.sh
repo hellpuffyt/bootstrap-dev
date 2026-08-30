@@ -14,6 +14,7 @@ if [ -n "${BOOTSTRAP_PREFLIGHT_SH_LOADED:-}" ]; then
 fi
 BOOTSTRAP_PREFLIGHT_SH_LOADED=1
 
+# shellcheck disable=SC2120  # $1 is an optional override; callers may omit it
 preflight_check_disk_space() {
 	local min_mb="${BOOTSTRAP_MIN_DISK_MB:-500}"
 	local target="${1:-$HOME}"
@@ -36,6 +37,7 @@ preflight_check_disk_space() {
 	return 0
 }
 
+# shellcheck disable=SC2120  # $1 is an optional override; callers may omit it
 preflight_check_network() {
 	if [ "${BOOTSTRAP_SKIP_NETWORK_CHECK:-0}" = "1" ]; then
 		log_info "preflight: network check skipped"

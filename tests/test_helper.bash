@@ -21,6 +21,9 @@ bd_common_setup() {
 	export FAKE_BIN
 	export PATH="$FAKE_BIN:$PATH"
 
+	# Remember the real PATH so a test can opt into full isolation.
+	export REAL_PATH="$PATH"
+
 	export STATE_FILE="$TEST_TMP/state"
 	export LOG_FILE="$TEST_TMP/log"
 	unset DRY_RUN RESUME_MODE FORCE_STEP PKG_MANAGER || true
@@ -112,4 +115,38 @@ stub_pkg_manager() {
 		printf 'exit 0\n'
 	} >"$script"
 	chmod +x "$script"
+}
+
+# Restricts PATH so no *package manager* from the host is visible.
+#
+# Package-manager detection must be able to assert that none is present, but an
+# Ubuntu runner has a real apt-get on PATH -- which made "no manager found" and
+# "detects a stubbed brew" pass in a bare Alpine container and fail in CI.
+#
+# Emptying PATH outright is too blunt: the library needs `date` for logging and
+# the teardown needs `rm`, so the tests died with 127 instead of asserting.
+# Instead, build a sanitised directory of symlinks to the utilities the code
+# genuinely uses, deliberately excluding every package manager, and put the
+# stub directory ahead of it.
+bd_isolate_path() {
+	local sysbin="$TEST_TMP/sysbin"
+	mkdir -p "$sysbin"
+
+	# Everything the libraries and bats itself need. Package managers are
+	# absent by design; that absence is the condition under test.
+	local tool
+	for tool in sh bash env printf date rm mkdir mktemp cat cp mv ln touch 		sed awk grep df chmod sort head tail wc tr cut dirname basename 		sleep id uname stat find xargs tee; do
+		local resolved
+		resolved="$(PATH="$REAL_PATH" command -v "$tool" 2>/dev/null || true)"
+		if [ -n "$resolved" ] && [ ! -e "$sysbin/$tool" ]; then
+			ln -sf "$resolved" "$sysbin/$tool"
+		fi
+	done
+
+	export PATH="$FAKE_BIN:$sysbin"
+}
+
+# Restores the PATH captured by bd_common_setup.
+bd_restore_path() {
+	export PATH="$REAL_PATH"
 }
