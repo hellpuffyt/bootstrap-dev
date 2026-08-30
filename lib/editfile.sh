@@ -71,12 +71,30 @@ managed_block_apply() {
 	tmp="$(mktemp)"
 
 	if [ "$existing" -eq 1 ] && grep -Fxq -- "$start" "$file" 2>/dev/null; then
-		awk -v start="$start" -v end="$end" -v block="$new_block" '
-			$0 == start { print block; inside = 1; next }
+		# Pass the replacement block through a file rather than `awk -v`.
+		# The block is multi-line, and one-true-awk -- which is what macOS
+		# ships as `awk` -- rejects a newline inside a -v assignment:
+		#   awk: newline in string # >>> start >>> ... at source line 1
+		# and exits 2. gawk and mawk accept it, so this only ever failed on
+		# macOS. Reading the block with getline behaves identically on all
+		# three.
+		local blockfile
+		blockfile="$(mktemp)"
+		printf '%s\n' "$new_block" >"$blockfile"
+		awk -v start="$start" -v end="$end" -v blockfile="$blockfile" '
+			$0 == start {
+				while ((getline line < blockfile) > 0) {
+					print line
+				}
+				close(blockfile)
+				inside = 1
+				next
+			}
 			$0 == end   { inside = 0; next }
 			inside      { next }
 			{ print }
 		' "$source" >"$tmp"
+		rm -f "$blockfile"
 	else
 		cat -- "$source" >"$tmp"
 		# Ensure exactly one blank line separates existing content from the
