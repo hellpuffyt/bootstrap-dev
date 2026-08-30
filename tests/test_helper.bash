@@ -134,8 +134,11 @@ bd_isolate_path() {
 
 	# Everything the libraries and bats itself need. Package managers are
 	# absent by design; that absence is the condition under test.
-	local tool
-	for tool in sh bash env printf date rm mkdir mktemp cat cp mv ln touch 		sed awk grep df chmod sort head tail wc tr cut dirname basename 		sleep id uname stat find xargs tee; do
+	local tools tool
+	tools="sh bash env printf date rm mkdir mktemp cat cp mv ln touch"
+	tools="$tools sed awk grep df chmod sort head tail wc tr cut"
+	tools="$tools dirname basename sleep id uname stat find xargs tee"
+	for tool in $tools; do
 		local resolved
 		resolved="$(PATH="$REAL_PATH" command -v "$tool" 2>/dev/null || true)"
 		if [ -n "$resolved" ] && [ ! -e "$sysbin/$tool" ]; then
