@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  bats:
+    name: "bats: ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Install bats-core (apt)"
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bats
+
+      - name: "Install bats-core (brew)"
+        if: runner.os == 'macOS'
+        run: brew install bats-core
+
+      - name: "Run bats test suite"
+        run: bats tests/
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Ensure shellcheck is installed"
+        run: command -v shellcheck || (sudo apt-get update && sudo apt-get install -y shellcheck)
+
+      - name: "Run shellcheck on all shell scripts"
+        run: |
+          shopt -s globstar nullglob
+          files=(bootstrap.sh lib/**/*.sh steps/**/*.sh)
+          echo "Checking: ${files[*]}"
+          shellcheck "${files[@]}"
+
+  shfmt:
+    name: "shfmt: formatting check"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Install shfmt"
+        # Installed via `go install` (pinned version) rather than a curled
+        # binary: the Go toolchain verifies the module against the public
+        # checksum database automatically, which is our checksum guarantee.
+        run: |
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.9.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: "Check formatting"
+        run: shfmt -d .
+
+  smoke:
+    name: "smoke: --dry-run on ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Snapshot HOME before the dry run"
+        run: ls -1a "$HOME" | sort > /tmp/home-before.txt
+
+      - name: "Run bootstrap.sh --dry-run"
+        run: ./bootstrap.sh --dry-run --profile minimal --state-file /tmp/smoke-state --log-file /tmp/smoke.log
+
+      - name: "Assert the state file was not created"
+        run: |
+          if [ -e /tmp/smoke-state ]; then
+            echo "state file was created during --dry-run" >&2
+            exit 1
+          fi
+
+      - name: "Assert HOME was not modified"
+        run: |
+          ls -1a "$HOME" | sort > /tmp/home-after.txt
+          diff /tmp/home-before.txt /tmp/home-after.txt

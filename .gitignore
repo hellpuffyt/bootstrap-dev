@@ -1,0 +1,11 @@
+# Runtime artifacts produced by running bootstrap.sh
+.bootstrap-dev/
+*.log
+
+# Editor/OS cruft
+.DS_Store
+*.swp
+*.swo
+
+# Local scratch
+/tmp/
