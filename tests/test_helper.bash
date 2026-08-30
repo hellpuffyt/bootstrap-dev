@@ -86,6 +86,17 @@ EOF
 }
 
 bd_common_teardown() {
+	# Restore PATH before removing the scratch directory. bd_isolate_path puts
+	# symlinked utilities -- including rm -- inside $TEST_TMP/sysbin, so tearing
+	# the directory down while PATH still points into it destroys the very rm
+	# that bats uses for its own cleanup afterwards. The suite then passes every
+	# test and still exits non-zero with
+	#   bats-exec-test: /tmp/.../sysbin/rm: No such file or directory
+	bd_restore_path
+	# bash caches resolved command paths, so clear the hash as well: a cached
+	# entry pointing into the deleted directory fails the same way.
+	hash -r 2>/dev/null || true
+
 	[ -n "${TEST_TMP:-}" ] && rm -rf -- "$TEST_TMP"
 }
 

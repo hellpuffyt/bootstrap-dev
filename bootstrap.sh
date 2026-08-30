@@ -139,7 +139,13 @@ if [ "$DRY_RUN" -ne 1 ]; then
 	state_init
 fi
 
-mapfile -t STEP_IDS < <(grep -Ev '^[[:space:]]*(#|$)' "$PROFILE_FILE")
+# Read with a loop rather than `mapfile`: mapfile is a bash 4 builtin and
+# macOS still ships bash 3.2, where it does not exist. A bootstrap tool that
+# cannot run on macOS is not much of a bootstrap tool.
+STEP_IDS=()
+while IFS= read -r _line; do
+	STEP_IDS+=("$_line")
+done < <(grep -Ev '^[[:space:]]*(#|$)' "$PROFILE_FILE")
 
 exit_code=0
 for id in "${STEP_IDS[@]}"; do

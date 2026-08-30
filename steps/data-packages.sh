@@ -27,7 +27,11 @@ step_data-packages_check() {
 step_data-packages_apply() {
 	pkg_detect || return 1
 	local pkgs
-	mapfile -t pkgs < <(_data_packages_list "$PKG_MANAGER")
+	# bash 3.2 on macOS has no mapfile; read into the array by hand.
+	pkgs=()
+	while IFS= read -r _pkg; do
+		pkgs+=("$_pkg")
+	done < <(_data_packages_list "$PKG_MANAGER")
 	if [ "${DRY_RUN:-0}" = "1" ]; then
 		log_info "[dry-run] would install: ${pkgs[*]}"
 		return 0
