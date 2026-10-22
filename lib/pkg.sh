@@ -56,7 +56,14 @@ pkg_install() {
 	pkg_detect || return 1
 	case "$PKG_MANAGER" in
 	apt)
-		pkg_run_privileged apt-get install -y "$@"
+		# A fresh Debian/Ubuntu install (or container) has no package lists, so
+		# install fails with "Unable to locate package" until they are fetched.
+		# Refresh once per run; noninteractive so tzdata & co. cannot block.
+		if [ "${BOOTSTRAP_APT_UPDATED:-0}" != "1" ]; then
+			pkg_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get update || return 1
+			BOOTSTRAP_APT_UPDATED=1
+		fi
+		pkg_run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
 		;;
 	dnf)
 		pkg_run_privileged dnf install -y "$@"

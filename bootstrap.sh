@@ -45,10 +45,21 @@ Options:
 EOF
 }
 
+# Every option that takes a value goes through this, so a missing value is a
+# bad argument (exit 3) rather than a bare ${2:?} shell error (exit 1).
+need_value() {
+	if [ "$2" -lt 2 ] || [ -z "$3" ]; then
+		printf '%s requires a value\n' "$1" >&2
+		usage >&2
+		exit 3
+	fi
+}
+
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 	--profile)
-		PROFILE="${2:?--profile requires a value}"
+		need_value --profile "$#" "${2:-}"
+		PROFILE="$2"
 		shift 2
 		;;
 	--dry-run)
@@ -60,15 +71,18 @@ while [ "$#" -gt 0 ]; do
 		shift
 		;;
 	--force)
-		FORCE_STEP="${2:?--force requires a step name}"
+		need_value --force "$#" "${2:-}"
+		FORCE_STEP="$2"
 		shift 2
 		;;
 	--state-file)
-		STATE_FILE="${2:?--state-file requires a value}"
+		need_value --state-file "$#" "${2:-}"
+		STATE_FILE="$2"
 		shift 2
 		;;
 	--log-file)
-		LOG_FILE_PATH="${2:?--log-file requires a value}"
+		need_value --log-file "$#" "${2:-}"
+		LOG_FILE_PATH="$2"
 		shift 2
 		;;
 	--skip-preflight)
@@ -119,10 +133,36 @@ if [ "$LIST_STEPS" -eq 1 ]; then
 	exit 0
 fi
 
+case "$PROFILE" in
+"" | *[!A-Za-z0-9_-]*)
+	printf 'invalid profile name: %s (letters, digits, - and _ only)\n' "$PROFILE" >&2
+	exit 3
+	;;
+esac
+
 PROFILE_FILE="$BOOTSTRAP_ROOT/profiles/${PROFILE}.conf"
 if [ ! -f "$PROFILE_FILE" ]; then
 	printf 'unknown profile: %s (looked for %s)\n' "$PROFILE" "$PROFILE_FILE" >&2
 	exit 3
+fi
+
+# Read with a loop rather than `mapfile`: mapfile is a bash 4 builtin and
+# macOS still ships bash 3.2, where it does not exist. A bootstrap tool that
+# cannot run on macOS is not much of a bootstrap tool.
+STEP_IDS=()
+while IFS= read -r _line; do
+	STEP_IDS+=("$_line")
+done < <(grep -Ev '^[[:space:]]*(#|$)' "$PROFILE_FILE")
+
+if [ -n "$FORCE_STEP" ]; then
+	_force_in_profile=0
+	for id in "${STEP_IDS[@]}"; do
+		[ "$id" = "$FORCE_STEP" ] && _force_in_profile=1
+	done
+	if [ "$_force_in_profile" -ne 1 ]; then
+		printf -- '--force %s: no such step in profile %s (steps: %s)\n' "$FORCE_STEP" "$PROFILE" "${STEP_IDS[*]}" >&2
+		exit 3
+	fi
 fi
 
 log_init "$LOG_FILE_PATH"
@@ -138,14 +178,6 @@ fi
 if [ "$DRY_RUN" -ne 1 ]; then
 	state_init
 fi
-
-# Read with a loop rather than `mapfile`: mapfile is a bash 4 builtin and
-# macOS still ships bash 3.2, where it does not exist. A bootstrap tool that
-# cannot run on macOS is not much of a bootstrap tool.
-STEP_IDS=()
-while IFS= read -r _line; do
-	STEP_IDS+=("$_line")
-done < <(grep -Ev '^[[:space:]]*(#|$)' "$PROFILE_FILE")
 
 exit_code=0
 for id in "${STEP_IDS[@]}"; do

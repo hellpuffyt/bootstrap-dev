@@ -59,7 +59,8 @@ run_step() {
 	local force=0
 	if [ "${FORCE_STEP:-}" = "$id" ]; then
 		force=1
-		state_clear "$id"
+		# --dry-run must not touch the state file.
+		[ "${DRY_RUN:-0}" = "1" ] || state_clear "$id"
 	fi
 
 	if [ "$force" -ne 1 ] && [ "${RESUME_MODE:-0}" = "1" ] && state_is_done "$id"; then

@@ -127,3 +127,12 @@ teardown() {
 	run step_summary_print
 	[[ "$output" == *"changed: 1"* ]]
 }
+
+# Regression: --force cleared the step from the state file even under --dry-run.
+@test "DRY_RUN=1 with FORCE_STEP does not modify the state file" {
+	printf 'good\n' >"$STATE_FILE"
+	cp "$STATE_FILE" "$TEST_TMP/state.before"
+	DRY_RUN=1 FORCE_STEP=good run run_step good
+	[ "$status" -eq 0 ]
+	cmp -s "$STATE_FILE" "$TEST_TMP/state.before"
+}

@@ -45,7 +45,10 @@ preflight_check_network() {
 	fi
 	local host="${1:-github.com}"
 	if command -v curl >/dev/null 2>&1; then
-		if curl -fsS --max-time 5 -o /dev/null "https://${host}"; then
+		# HEAD only: reachability needs a response, not the page body. Fetching
+		# the full github.com page under a 5s cap reported "unreachable" on any
+		# link slow enough to need more than 5s for ~300 KB.
+		if curl -fsS --head --connect-timeout 5 --max-time 15 -o /dev/null "https://${host}"; then
 			log_info "preflight: network reachable ($host)"
 			return 0
 		fi
