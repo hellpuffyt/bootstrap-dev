@@ -76,7 +76,8 @@ summary.
   no log directory changes beyond the log itself, and no dotfile edits.
 - Package manager abstraction (`lib/pkg.sh`): detects `apt`, `dnf`, `pacman`,
   or `brew` and dispatches to it; fails with a clear error on an unsupported
-  platform rather than guessing.
+  platform rather than guessing. On `apt` it refreshes the package lists once
+  per run before the first install (a fresh system has none).
 - Profiles (`profiles/*.conf`): a profile is a plain list of step ids,
   selected with `--profile`.
 - Preflight checks (`lib/preflight.sh`) that run before anything changes:
@@ -100,7 +101,7 @@ List them at any time with `--list-profiles`; list every known step with
 ## Installation
 
 ```sh
-git clone https://example.com/bootstrap-dev.git
+git clone https://github.com/hellpuffyt/bootstrap-dev.git
 cd bootstrap-dev
 chmod +x bootstrap.sh
 ```
@@ -145,7 +146,19 @@ Options:
 ```
 
 Exit codes: `0` success, `1` a step failed, `2` preflight failed, `3` a bad
-argument or unknown profile.
+argument (including a missing option value), an unknown or invalid profile
+name, or `--force` naming a step that is not in the profile.
+
+Environment variables (all optional):
+
+| Variable | Effect |
+|---|---|
+| `BOOTSTRAP_SKIP_NETWORK_CHECK=1` | Skip the preflight HTTPS probe of github.com. |
+| `BOOTSTRAP_SKIP_SUDO_CHECK=1` | Skip the preflight sudo check. |
+| `BOOTSTRAP_MIN_DISK_MB` | Free space required by preflight (default 500). |
+| `BOOTSTRAP_CONFLICT_BINS` | Space-separated binaries whose presence fails preflight. |
+| `BOOTSTRAP_SHELL_PROFILE_FILE` | File the `shell-profile` step edits (default `~/.bashrc`). |
+| `STATE_FILE` / `LOG_FILE_PATH` | Same as `--state-file` / `--log-file`. |
 
 ## Writing a step
 
@@ -204,7 +217,10 @@ Rules for a good step:
   no-op).
 - Dotfile edits go through managed blocks, never raw appends: the marker
   comments make the boundary of what `bootstrap-dev` owns explicit and
-  removable.
+  removable. The file is rewritten in place, so a symlinked dotfile stays a
+  symlink and keeps its permissions. If the markers are damaged (an end
+  marker missing, duplicated or out of order), the step fails and the file
+  is left untouched rather than guessing where the block ends.
 - A failing `verify` fails the whole run immediately rather than continuing
   past a step that silently didn't take effect.
 - `--dry-run` never calls a step's real `apply` path — steps receive
@@ -249,6 +265,8 @@ and preflight checks including their failure paths.
 
 ## Security
 
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
 - `bootstrap-dev` never pipes a fetched script straight into a shell
   (`curl ... | bash`) from an unpinned URL. If a step needs to fetch
   something, the rule is: pin the URL to a specific version and verify a
@@ -261,6 +279,21 @@ and preflight checks including their failure paths.
   invocation) — never blanket `sudo` for the whole script.
 - `set -euo pipefail` throughout, all variable expansions quoted, no `eval`
   of untrusted input anywhere in the codebase.
+
+## Limitations
+
+- Verified end to end only in throwaway containers (Ubuntu 24.04 with `apt`,
+  Fedora with `dnf`, see `docs/PRODUCTION_READINESS.md`); `pacman` and
+  `brew` dispatch is covered by stubbed tests only. It has not been run
+  against a real macOS or desktop Linux install.
+- `shell-profile` edits `~/.bashrc` by default. On macOS the default login
+  shell is zsh, which does not read it; point `BOOTSTRAP_SHELL_PROFILE_FILE`
+  at `~/.zshrc` there.
+- Steps are run inside `if`, where bash disables `set -e`; a multi-command
+  `apply` can therefore continue past a failing command. The separate
+  `verify` call is what catches a step that did not take effect.
+- No locking: two concurrent runs against the same state file are not
+  supported.
 
 ## License
 
