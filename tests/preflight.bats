@@ -58,3 +58,18 @@ teardown() {
 	BOOTSTRAP_MIN_DISK_MB=1 BOOTSTRAP_SKIP_NETWORK_CHECK=1 BOOTSTRAP_SKIP_SUDO_CHECK=1 run preflight_run
 	[ "$status" -eq 0 ]
 }
+
+# Regression: the probe downloaded the whole page with --max-time 5, so a slow
+# but working connection failed preflight. It must be a HEAD request.
+@test "network check sends a HEAD request with a connect timeout" {
+	cat >"$FAKE_BIN/curl" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$TEST_TMP/curl.args"
+exit 0
+EOF
+	chmod +x "$FAKE_BIN/curl"
+	run preflight_check_network github.com
+	[ "$status" -eq 0 ]
+	grep -q -- '--head' "$TEST_TMP/curl.args"
+	grep -q -- '--connect-timeout' "$TEST_TMP/curl.args"
+}

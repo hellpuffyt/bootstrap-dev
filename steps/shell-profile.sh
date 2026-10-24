@@ -24,7 +24,11 @@ step_shell-profile_check() {
 }
 
 step_shell-profile_apply() {
-	managed_block_apply "$BOOTSTRAP_SHELL_PROFILE_FILE" "$BOOTSTRAP_SHELL_PROFILE_ID" "$(_shell_profile_content)"
+	# managed_block_apply returns 1 when the block is already up to date; that is
+	# success for a step (e.g. under --force). Only 2 means it could not apply.
+	local rc=0
+	managed_block_apply "$BOOTSTRAP_SHELL_PROFILE_FILE" "$BOOTSTRAP_SHELL_PROFILE_ID" "$(_shell_profile_content)" || rc=$?
+	[ "$rc" -le 1 ]
 }
 
 step_shell-profile_verify() {

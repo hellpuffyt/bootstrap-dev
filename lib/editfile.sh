@@ -14,8 +14,12 @@
 # Public API:
 #   managed_block_render <id> <content>          -> block text on stdout
 #   managed_block_current <file> <id>            -> current block body on stdout (empty if absent)
-#   managed_block_apply <file> <id> <content>     -> writes file, returns 0 if changed, 1 if unchanged
+#   managed_block_apply <file> <id> <content>     -> writes file, returns 0 if changed, 1 if unchanged,
+#                                                    2 if the file's markers are damaged (nothing written)
 #     Honors DRY_RUN=1: prints the change and returns without writing.
+#
+# The file is rewritten in place (its contents replaced, not the file itself), so a
+# symlinked dotfile stays a symlink and the file keeps its owner and permissions.
 
 if [ -n "${BOOTSTRAP_EDITFILE_SH_LOADED:-}" ]; then
 	return
@@ -65,6 +69,25 @@ managed_block_apply() {
 	local source="$file"
 	if [ "$existing" -ne 1 ]; then
 		source="/dev/null"
+	fi
+
+	# Refuse to touch a file whose markers are not exactly one start line followed by
+	# one end line: with the end marker missing, the replacement below would treat
+	# everything after the start marker as part of the block and delete it.
+	if [ "$existing" -eq 1 ]; then
+		local markers
+		markers="$(awk -v start="$start" -v end="$end" '
+			$0 == start { s++; if (e > 0) order = "bad" }
+			$0 == end   { e++; if (s == 0) order = "bad" }
+			END { print s + 0, e + 0, (order == "" ? "ok" : order) }
+		' "$file")"
+		case "$markers" in
+		"0 0 ok" | "1 1 ok") ;;
+		*)
+			log_error "managed block '$id' in $file has damaged markers (start count, end count, order: $markers); fix or remove them by hand, nothing was changed"
+			return 2
+			;;
+		esac
 	fi
 
 	local tmp
@@ -120,6 +143,13 @@ managed_block_apply() {
 	fi
 
 	mkdir -p "$(dirname -- "$file")"
-	mv -- "$tmp" "$file"
+	# Write through the existing path instead of renaming over it: keeps symlinks
+	# (e.g. a dotfile manager's link) intact and keeps the file's permissions.
+	if ! cat -- "$tmp" >"$file"; then
+		rm -f "$tmp"
+		log_error "could not write managed block '$id' to $file"
+		return 2
+	fi
+	rm -f "$tmp"
 	return 0
 }

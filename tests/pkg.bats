@@ -86,3 +86,18 @@ EOF
 	run pkg_install
 	[ "$status" -eq 0 ]
 }
+
+# Regression: a fresh Debian/Ubuntu system has no package lists, so
+# `apt-get install` failed with "Unable to locate package" until updated.
+@test "pkg_install on apt refreshes package lists once, before the first install" {
+	stub_pkg_manager apt-get
+	PKG_MANAGER=""
+	BOOTSTRAP_APT_UPDATED=0
+	pkg_install git
+	pkg_install curl
+	run cat "$CALL_LOG"
+	[ "${lines[0]}" = "update" ]
+	[[ "${lines[1]}" == *"install -y git"* ]]
+	[[ "${lines[2]}" == *"install -y curl"* ]]
+	[ "${#lines[@]}" -eq 3 ]
+}

@@ -92,3 +92,42 @@ run_bootstrap() {
 	run run_bootstrap --profile minimal
 	[[ "$output" == *"failed: 0"* ]]
 }
+
+# Regression: the README's "--force shell-profile" example failed because the
+# managed-block editor reports "already up to date" with exit 1.
+@test "--force shell-profile on an up-to-date block succeeds" {
+	export BOOTSTRAP_SHELL_PROFILE_FILE="$HOME/.bashrc"
+	run_bootstrap --profile minimal
+	run run_bootstrap --profile minimal --force shell-profile
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"done: 'shell-profile'"* ]]
+	[ "$(grep -c 'bootstrap-dev:shell-profile >>>' "$BOOTSTRAP_SHELL_PROFILE_FILE")" -eq 1 ]
+}
+
+@test "--dry-run --force leaves the state file unchanged" {
+	export BOOTSTRAP_SHELL_PROFILE_FILE="$HOME/.bashrc"
+	run_bootstrap --profile minimal
+	cp "$STATE_FILE" "$TEST_TMP/state.before"
+	run run_bootstrap --profile minimal --dry-run --force git-defaults
+	[ "$status" -eq 0 ]
+	cmp -s "$STATE_FILE" "$TEST_TMP/state.before"
+}
+
+@test "a damaged shell-profile block fails the run without losing user lines" {
+	export BOOTSTRAP_SHELL_PROFILE_FILE="$HOME/.bashrc"
+	printf '# >>> bootstrap-dev:shell-profile >>>\nmine 1\nmine 2\n' >"$BOOTSTRAP_SHELL_PROFILE_FILE"
+	run run_bootstrap --profile minimal
+	[ "$status" -eq 1 ]
+	[ "$(grep -c '^mine' "$BOOTSTRAP_SHELL_PROFILE_FILE")" -eq 2 ]
+}
+
+@test "bad arguments exit 3 before anything is written" {
+	run bash "$ROOT/bootstrap.sh" --profile
+	[ "$status" -eq 3 ]
+	run run_bootstrap --profile ../tests/x
+	[ "$status" -eq 3 ]
+	run run_bootstrap --profile minimal --force no-such-step
+	[ "$status" -eq 3 ]
+	[ ! -e "$STATE_FILE" ]
+	[ ! -e "$LOG_FILE" ]
+}

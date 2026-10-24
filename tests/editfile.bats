@@ -101,3 +101,41 @@ line two"
 	DRY_RUN=1 run managed_block_apply "$TARGET" "demo" "export FOO=bar"
 	[ "$status" -eq 1 ]
 }
+
+# Regression: the file used to be replaced via `mv` of a mktemp file, which
+# turned a symlinked dotfile into a regular file and reset its mode to 0600.
+@test "managed_block_apply keeps a symlinked dotfile a symlink" {
+	printf 'existing line\n' >"$TEST_TMP/real-dotfile"
+	ln -s "$TEST_TMP/real-dotfile" "$TARGET"
+	managed_block_apply "$TARGET" "demo" "export FOO=bar"
+	[ -L "$TARGET" ]
+	grep -qF 'export FOO=bar' "$TEST_TMP/real-dotfile"
+	grep -qF 'existing line' "$TEST_TMP/real-dotfile"
+}
+
+@test "managed_block_apply keeps the file's permissions" {
+	printf 'existing line\n' >"$TARGET"
+	chmod 644 "$TARGET"
+	managed_block_apply "$TARGET" "demo" "export FOO=bar"
+	[ "$(find "$TARGET" -perm 644 | wc -l | tr -d ' ')" = "1" ]
+}
+
+# Regression: with the end marker missing, everything after the start marker
+# was treated as block content and deleted.
+@test "a missing end marker is refused (exit 2) and the file is left untouched" {
+	printf 'before\n# >>> bootstrap-dev:demo >>>\nold\nuser line 1\nuser line 2\n' >"$TARGET"
+	cp "$TARGET" "$TEST_TMP/expected"
+	run managed_block_apply "$TARGET" "demo" "export FOO=bar"
+	[ "$status" -eq 2 ]
+	[[ "$output" == *"damaged markers"* ]]
+	cmp -s "$TARGET" "$TEST_TMP/expected"
+}
+
+@test "duplicate or out-of-order markers are refused (exit 2)" {
+	printf '# <<< bootstrap-dev:demo <<<\n# >>> bootstrap-dev:demo >>>\nx\n' >"$TARGET"
+	run managed_block_apply "$TARGET" "demo" "export FOO=bar"
+	[ "$status" -eq 2 ]
+	printf '# >>> bootstrap-dev:demo >>>\na\n# <<< bootstrap-dev:demo <<<\n# >>> bootstrap-dev:demo >>>\nb\n# <<< bootstrap-dev:demo <<<\n' >"$TARGET"
+	run managed_block_apply "$TARGET" "demo" "export FOO=bar"
+	[ "$status" -eq 2 ]
+}
