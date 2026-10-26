@@ -1,7 +1,44 @@
 # bootstrap-dev
 
-Bootstrap a development machine reproducibly — verifying each step instead
+Bootstrap a development machine reproducibly, verifying each step instead
 of assuming it worked.
+
+## Demo
+
+<img src="docs/screenshots/minimal-profile-run-twice-ubuntu.png" width="100%" alt="Terminal: the minimal profile run twice in a fresh Ubuntu 24.04 container. The first run installs packages and changes three steps; the second run skips all three; the managed .bashrc block appears once">
+
+Real terminal capture: `./bootstrap.sh --profile minimal` run twice in a fresh `ubuntu:24.04` container as root. The
+first run applies three steps (the apt-get output is trimmed); the second finds every check already satisfied and
+changes nothing, and `~/.bashrc` still holds a single managed block. The second run as text:
+
+```console
+$ ./bootstrap.sh --profile minimal
+[INFO] bootstrap-dev starting: profile=minimal dry_run=0 resume=0
+==> running preflight checks
+[INFO] preflight: disk space ok (8886MB free at /root)
+[INFO] preflight: network reachable (github.com)
+[INFO] preflight: running as root, sudo not required
+[INFO] preflight: no conflicting installs declared or found
+[INFO] preflight: all checks passed
+==> base-packages - install core command line tools (git, curl, ca-certificates)
+[INFO] skip: 'base-packages' already satisfied
+==> git-defaults - set sane git global defaults (init.defaultBranch, pull.rebase)
+[INFO] skip: 'git-defaults' already satisfied
+==> shell-profile - add managed shell defaults to /root/.bashrc
+[INFO] skip: 'shell-profile' already satisfied
+==> summary
+[INFO] changed: 0 (none)
+[INFO] skipped: 3 (base-packages git-defaults shell-profile)
+[INFO] failed: 0
+[INFO] log written to /root/.bootstrap-dev/bootstrap.log
+```
+
+To reproduce it without touching your own machine:
+
+```sh
+git archive HEAD | docker run --rm -i ubuntu:24.04 bash -c \
+  'mkdir /w && cd /w && tar xf - && ./bootstrap.sh --profile minimal && ./bootstrap.sh --profile minimal'
+```
 
 ## What
 
@@ -24,10 +61,10 @@ Most bootstrap scripts are written once, run once, and rot:
 
 `bootstrap-dev` is built around three guarantees instead:
 
-- **Idempotent** — running it twice does nothing the second time.
-- **Verified** — every step proves it worked; a step that silently fails to
+- **Idempotent**: running it twice does nothing the second time.
+- **Verified**: every step proves it worked; a step that silently fails to
   take effect fails the run loudly instead of continuing.
-- **Resumable** — an interrupted run can be picked back up without redoing
+- **Resumable**: an interrupted run can be picked back up without redoing
   finished work.
 
 ## How the step framework works
@@ -45,18 +82,19 @@ step id `foo`:
 
 `run_step` (in `lib/step.sh`) drives each step through:
 
-1. **Resume skip** — if `--resume` is set and the step is recorded as done
+1. **Resume skip**: if `--resume` is set and the step is recorded as done
    in the state file, skip immediately without calling anything.
-2. **Check** — if `step_foo_check` passes, the step is already satisfied;
+2. **Check**: if `step_foo_check` passes, the step is already satisfied;
    record it done and move on.
-3. **Apply** — otherwise call `step_foo_apply`. In `--dry-run` mode, steps
+3. **Apply**: otherwise call `step_foo_apply`. In `--dry-run` mode, steps
    are called with `DRY_RUN=1` and expected to only print what they would
-   do.
-4. **Verify** — call `step_foo_verify`. If it fails, the step (and the run)
+   do; verify is skipped and the step is counted under "skipped" in the
+   summary.
+4. **Verify**: call `step_foo_verify`. If it fails, the step (and the run)
    fails loudly, and the step's rollback hint is printed. A step that
    "applies successfully" but doesn't verify is treated as a failure, not a
-   success — that's the whole point of separating the two.
-5. **Record** — on success, the step id is appended to the state file.
+   success; that's the whole point of separating the two.
+5. **Record**: on success, the step id is appended to the state file.
 
 A run walks the step ids listed in a profile file (`profiles/*.conf`) in
 order, stopping at the first failure, then prints a changed/skipped/failed
@@ -67,7 +105,7 @@ summary.
 - Step framework with `check`/`apply`/`verify` and rollback hints.
 - Idempotent managed-block dotfile editor (`lib/editfile.sh`): a block
   delimited by `# >>> bootstrap-dev:<id> >>>` / `# <<< bootstrap-dev:<id> <<<`
-  markers is replaced in place, not appended — ten runs leave one block.
+  markers is replaced in place, not appended, so ten runs leave one block.
   See `steps/shell-profile.sh` for a working example.
 - Resumable runs via a plain state file (`~/.bootstrap-dev/state` by
   default): `--resume` skips completed steps, `--force <step>` re-runs one.
@@ -106,7 +144,7 @@ cd bootstrap-dev
 chmod +x bootstrap.sh
 ```
 
-No install step beyond cloning — `bootstrap.sh` sources everything it needs
+No install step beyond cloning: `bootstrap.sh` sources everything it needs
 from `lib/` and `steps/` relative to its own location.
 
 ## Usage
@@ -200,7 +238,7 @@ every file in `steps/` automatically, so no registration step is needed.
 
 Rules for a good step:
 
-- `apply` must be idempotent — running it when `check` already passed should
+- `apply` must be idempotent. Running it when `check` already passed should
   never be attempted (the framework won't call it), but running `apply`
   twice back to back must still be safe, since `--force` can trigger that.
 - `verify` must actually re-check reality, not just return the exit code of
@@ -223,7 +261,7 @@ Rules for a good step:
   is left untouched rather than guessing where the block ends.
 - A failing `verify` fails the whole run immediately rather than continuing
   past a step that silently didn't take effect.
-- `--dry-run` never calls a step's real `apply` path — steps receive
+- `--dry-run` never calls a step's real `apply` path: steps receive
   `DRY_RUN=1` and are expected to only print.
 
 ## Examples
@@ -244,14 +282,14 @@ Rules for a good step:
 ## Testing
 
 Tests use [bats-core](https://github.com/bats-core/bats-core). The package
-manager is always stubbed — a fake `apt-get`/`brew`/etc. is placed ahead of
+manager is always stubbed: a fake `apt-get`/`brew`/etc. is placed ahead of
 `PATH` in `tests/test_helper.bash`'s `stub_pkg_manager`, so the test suite
 never installs anything real. `git` and `curl` are stubbed unconditionally
 for the same reason: the suite does not depend on what happens to be
 installed on the machine running it.
 
 ```sh
-bats tests/
+bats tests/                  # 69 tests
 
 # or, with nothing installed locally:
 docker run --rm -v "$PWD:/w" -w /w bats/bats:latest tests/
@@ -263,6 +301,10 @@ editor (ten runs → one block), state file resume and force, dry-run touching
 nothing, package manager detection and dispatch with a stubbed `command -v`,
 and preflight checks including their failure paths.
 
+CI also runs `shellcheck` on every script, `shfmt -d .` (v3.9.0), and a
+`--dry-run --profile minimal` smoke test on Ubuntu and macOS that asserts no
+state file is created and `$HOME` is unchanged.
+
 ## Security
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
@@ -270,13 +312,14 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 - `bootstrap-dev` never pipes a fetched script straight into a shell
   (`curl ... | bash`) from an unpinned URL. If a step needs to fetch
   something, the rule is: pin the URL to a specific version and verify a
-  checksum before using the downloaded artifact — the same policy this
-  repository's own CI applies when installing `shfmt`.
+  checksum before using the downloaded artifact. This repository's CI
+  follows the same rule for `shfmt`: it installs a pinned version with
+  `go install`, which checks the module against the Go checksum database.
 - All destructive actions require an explicit run (`--dry-run` is the
   default-safe way to inspect a profile first).
 - Elevated privileges are only used when required (`lib/pkg.sh` runs as the
   current user unless root, using `sudo` only for the actual package manager
-  invocation) — never blanket `sudo` for the whole script.
+  invocation), never blanket `sudo` for the whole script.
 - `set -euo pipefail` throughout, all variable expansions quoted, no `eval`
   of untrusted input anywhere in the codebase.
 
@@ -292,8 +335,15 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 - Steps are run inside `if`, where bash disables `set -e`; a multi-command
   `apply` can therefore continue past a failing command. The separate
   `verify` call is what catches a step that did not take effect.
+- The preflight network probe needs `curl` or `ping`. On a minimal image
+  that has neither (such as a fresh `ubuntu:24.04` container) it logs a
+  warning and skips the check instead of failing.
 - No locking: two concurrent runs against the same state file are not
   supported.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
