@@ -341,6 +341,10 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 - No locking: two concurrent runs against the same state file are not
   supported.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
